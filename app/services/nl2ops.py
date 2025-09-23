@@ -33,7 +33,7 @@ def _llm():
         api_key=key,
         base_url="https://openrouter.ai/api/v1",
         model="mistralai/mixtral-8x7b-instruct",
-        temperature=0
+        temperature=0.7
     )
 
 def _first_json(text: str) -> Dict[str, Any]:

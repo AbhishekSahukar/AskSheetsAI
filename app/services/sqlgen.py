@@ -7,16 +7,12 @@ from langchain.schema import SystemMessage, HumanMessage
 
 
 def _llm(temp=0):
-    key = os.getenv("OPENROUTER_API_KEY")
-    if not key:
-        raise RuntimeError("Missing OPENROUTER_API_KEY")
     return ChatOpenAI(
-        api_key=key,
+        api_key=os.getenv("OPENROUTER_API_KEY"),
         base_url="https://openrouter.ai/api/v1",
         model="mistralai/mixtral-8x7b-instruct",
         temperature=temp,
     )
-
 
 def _schema_hint(df: pd.DataFrame) -> Dict[str, str]:
     """
