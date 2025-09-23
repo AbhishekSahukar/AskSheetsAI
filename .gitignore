@@ -20,3 +20,4 @@ Logs
 logs/
 *.out
 
+users.db
