@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.db
+*.sqlite3
+
+# Virtual environment
+.venv/
+env/
+venv/
+
+# Environment variables (keep secrets out of Git!)
+.env
+.env.*
+
+
+# Logs
+*.log
+logs/
+*.out
+

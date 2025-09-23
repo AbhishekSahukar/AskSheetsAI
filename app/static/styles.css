@@ -1,0 +1,259 @@
+:root {
+  --bg: #0f1217;
+  --fg: #e5e5e5;
+  --muted: #9ca3af;
+  --bot: #1f2937;
+  --user: #2563eb;
+  --card: #181d25;
+}
+
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, sans-serif;
+  background: var(--bg);
+  color: var(--fg);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+}
+
+
+.chat-container {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 680px;
+  height: 92vh;
+  border-radius: 16px;
+  background: var(--card);
+  box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+  overflow: hidden;
+}
+
+.chat-header {
+  padding: 16px;
+  border-bottom: 1px solid #242a34;
+  text-align: center;
+}
+
+.chat-header h1 {
+  margin: 0;
+  font-size: 1.25rem;
+  color: #4da3ff;
+}
+
+.chat {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+
+.msg {
+  max-width: 80%;
+  border-radius: 14px;
+  font-size: 0.95rem;
+  line-height: 1.45;
+}
+
+.msg.bot { align-self: flex-start; }
+.msg.user { align-self: flex-end; }
+
+.meta {
+  margin: 0 0 4px 6px;
+  font-weight: 600;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.bubble {
+  background: var(--bot);
+  color: var(--fg);
+  padding: 12px 16px;
+  border-radius: 14px;
+  white-space: pre-line;
+  word-wrap: break-word;
+}
+
+.msg.user .bubble {
+  background: var(--user);
+  color: #fff;
+}
+
+
+.composer {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+  padding: 12px;
+  border-top: 1px solid #242a34;
+}
+
+.composer textarea {
+  flex: 1;
+  min-height: 56px;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid #242a34;
+  background: var(--bg);
+  color: var(--fg);
+  resize: vertical;
+  font-size: 0.95rem;
+}
+
+.composer button {
+  padding: 10px 16px;
+  border: 0;
+  border-radius: 10px;
+  background: #4da3ff;
+  color: #08111b;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.file-label {
+  font-size: 0.85em;
+  color: var(--muted);
+  align-self: center;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+
+.auth-body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: "Inter", sans-serif;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+  margin: 0;
+}
+
+.auth-wrapper {
+  width: 100%;
+  max-width: 400px;
+  padding: 1rem;
+}
+
+.auth-card {
+  background: rgba(30, 30, 30, 0.9);
+  border-radius: 12px;
+  padding: 2rem;
+  text-align: center;
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(10px);
+}
+
+.glossy {
+  background: linear-gradient(145deg, rgba(40, 40, 40, 0.95), rgba(20, 20, 20, 0.95));
+}
+
+.auth-title {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: bold;
+  color: #4da3ff;
+}
+
+.auth-subtitle {
+  margin: 0.5rem 0 1.5rem;
+  font-size: 0.95rem;
+  color: #bbb;
+}
+
+
+.auth-form input {
+  width: 100%;
+  padding: 0.8rem;
+  margin-bottom: 1rem;
+  border: 1px solid #333;
+  border-radius: 8px;
+  background: #1a1a1a;
+  color: #fff;
+  font-size: 0.9rem;
+}
+
+.auth-form input:focus {
+  outline: none;
+  border-color: #4f8cff;
+  box-shadow: 0 0 6px rgba(79, 140, 255, 0.5);
+}
+
+
+.auth-btn {
+  width: 100%;
+  padding: 0.9rem;
+  border: none;
+  border-radius: 8px;
+  background: linear-gradient(145deg, #4f8cff, #357ae8);
+  color: white;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.auth-btn:hover {
+  background: linear-gradient(145deg, #5a94ff, #3f7cf2);
+  transform: scale(1.02);
+}
+
+
+.auth-divider {
+  margin: 1.5rem 0;
+  color: #666;
+  font-size: 0.85rem;
+}
+
+
+.google-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  width: 100%;
+  padding: 0.9rem;
+  border: 1px solid #333;
+  border-radius: 8px;
+  background: linear-gradient(145deg, #2c2c2c, #1a1a1a);
+  color: #fff;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.google-btn img {
+  width: 20px;
+  height: 20px;
+}
+
+.google-btn:hover {
+  background: linear-gradient(145deg, #3a3a3a, #222);
+  transform: scale(1.02);
+}
+
+
+.auth-switch {
+  margin-top: 1.5rem;
+  font-size: 0.9rem;
+  color: #aaa;
+}
+
+.auth-switch a {
+  color: #4f8cff;
+  text-decoration: none;
+}
+
+.auth-switch a:hover {
+  text-decoration: underline;
+}

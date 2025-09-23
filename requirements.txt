@@ -1,0 +1,14 @@
+fastapi
+uvicorn[standard]
+python-multipart
+pandas
+openpyxl
+langchain>=0.2.0
+langchain-openai>=0.1.7
+openai>=1.35.0
+python-dotenv
+pdfplumber
+duckdb
+passlib[bcrypt]
+python-jose[cryptography]
+sqlalchemy

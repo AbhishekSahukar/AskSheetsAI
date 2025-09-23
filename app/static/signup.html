@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Signup - AskSheets</title>
+  <link rel="stylesheet" href="/static/styles.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body class="auth-body">
+  <main class="auth-wrapper">
+    <div class="auth-card glossy">
+      <h1 class="auth-title">📝 AskSheets</h1>
+      <p class="auth-subtitle">Create your account</p>
+
+      <form id="signupForm" class="auth-form">
+        <!-- ✅ Added name attributes -->
+        <input type="text" id="newUsername" name="username" placeholder="Username" required />
+        <input type="email" id="newEmail" name="email" placeholder="Email" required />
+        <input type="password" id="newPassword" name="password" placeholder="Password" required />
+        <button type="submit" class="auth-btn">Sign up</button>
+      </form>
+
+      <p class="auth-switch">
+        Already have an account? <a href="/static/login.html">Log in</a>
+      </p>
+    </div>
+  </main>
+</body>
+</html>

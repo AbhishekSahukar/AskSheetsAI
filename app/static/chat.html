@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>AskSheets Chat</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <div class="chat-container">
+    <div class="chat-header">
+      <h1>💬 AskSheets</h1>
+      <button id="logoutBtn" class="logout-btn">Logout</button>
+    </div>
+    <div id="chat" class="chat"></div>
+    <div class="composer">
+      <input type="file" id="file" />
+      <textarea id="query" placeholder="Type your message..."></textarea>
+      <button id="btnUpload">Upload</button>
+      <button id="btnAsk">Ask</button>
+    </div>
+  </div>
+</body>
+</html>
