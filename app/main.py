@@ -1,5 +1,6 @@
-
+from contextlib import asynccontextmanager
 from dotenv import load_dotenv
+
 load_dotenv()
 
 import os
@@ -12,186 +13,225 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 
-
 from langchain_openai import ChatOpenAI
-from langchain.schema import SystemMessage, HumanMessage
-
+from langchain_core.messages import SystemMessage, HumanMessage
 
 from .services.ingest import read_any
 from .services.jsonsafe import make_json_safe
 from .services.sqlgen import make_sql, rewrite_sql_bad
 from .services.sqlexec import run_sql_with_retry
 from .services.nlg import narrate
-
-
 from .services.auth_db import init_db, User
 from .services.auth_utils import (
-    get_db, hash_password, authenticate_user,
-    create_access_token, get_current_user
+    get_db,
+    hash_password,
+    authenticate_user,
+    create_access_token,
+    get_current_user,
 )
 
-
-REQUIRE_AUTH = False  
-
-
-app = FastAPI(title="AskSheets")
-app.mount("/static", StaticFiles(directory="app/static"), name="static")
-
-@app.on_event("startup")
-def _startup():
-    init_db()
-
-@app.get("/")
-def home():
-    return FileResponse("app/static/login.html")
-
-@app.get("/login")
-def login_page():
-    return FileResponse("app/static/login.html")
-
-@app.get("/signup")
-def signup_page():
-    return FileResponse("app/static/signup.html")
-
+# Set to "true" in your .env to require a valid JWT on upload/ask routes
+REQUIRE_AUTH = os.getenv("REQUIRE_AUTH", "false").lower() == "true"
 
 CACHE = Path(__file__).parent / "cache"
 CACHE.mkdir(parents=True, exist_ok=True)
 
-def _path(ds_id: str) -> Path:
+CHAT_SYSTEM = (
+    "You are AskSheets, a friendly and knowledgeable assistant. "
+    "Answer questions directly and conversationally on any topic — "
+    "data analysis, general knowledge, advice, or just a chat. "
+    "If a dataset is uploaded you can also analyze it; mention this if relevant. "
+    "Keep responses clear and concise, typically 2–4 sentences."
+)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    init_db()
+    yield
+
+
+app = FastAPI(title="AskSheets", lifespan=lifespan)
+app.mount("/static", StaticFiles(directory="app/static"), name="static")
+
+
+# ── Cache helpers ─────────────────────────────────────────────────────────────
+
+def _cache_path(ds_id: str) -> Path:
     return CACHE / f"{ds_id}.pkl"
 
-def save_df(ds_id, df) -> None:
-    with _path(ds_id).open("wb") as f:
+
+def save_df(ds_id: str, df) -> None:
+    with _cache_path(ds_id).open("wb") as f:
         pickle.dump(df, f)
 
-def load_df(ds_id):
-    p = _path(ds_id)
+
+def load_df(ds_id: str):
+    p = _cache_path(ds_id)
     if not p.exists():
         return None
     with p.open("rb") as f:
         return pickle.load(f)
 
 
-CHAT_SYS = (
-    "You are AskSheets, a friendly, knowledgeable chatbot. "
-    "Always answer user questions directly and conversationally, even if they are about general topics "
-    "like cars, movies, travel, health tips, or advice. "
-    "If the user uploads a dataset, you can also analyze it; you may mention this capability briefly if relevant. "
-    "Never claim you cannot access files or data; simply provide helpful answers. "
-    "Keep responses clear, concrete, and in 2–5 sentences."
-)
+def _build_llm(temperature: float = 0.7) -> ChatOpenAI:
+    api_key = os.getenv("OPENROUTER_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=500, detail="LLM API key is not configured")
+    return ChatOpenAI(
+        api_key=api_key,
+        base_url="https://openrouter.ai/api/v1",
+        model="minimax/minimax-m2.5",
+        temperature=temperature,
+    )
 
+
+def _maybe_require_user(token_user=Depends(get_current_user)):
+    return token_user if REQUIRE_AUTH else None
+
+
+# ── Pages ─────────────────────────────────────────────────────────────────────
+
+@app.get("/")
+def home():
+    return FileResponse("app/static/login.html")
+
+
+@app.get("/login")
+def login_page():
+    return FileResponse("app/static/login.html")
+
+
+@app.get("/signup")
+def signup_page():
+    return FileResponse("app/static/signup.html")
+
+
+@app.get("/chat")
+def chat_page():
+    return FileResponse("app/static/chat.html")
+
+
+# ── Auth ──────────────────────────────────────────────────────────────────────
 
 @app.post("/signup")
 def signup(
     username: str = Form(...),
     email: str = Form(...),
     password: str = Form(...),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
-    if db.query(User).filter((User.username == username) | (User.email == email)).first():
-        raise HTTPException(status_code=400, detail="User already exists")
-    user = User(username=username, email=email, hashed_password=hash_password(password))
+    exists = db.query(User).filter(
+        (User.username == username) | (User.email == email)
+    ).first()
+    if exists:
+        raise HTTPException(status_code=400, detail="Username or email is already taken")
+
+    user = User(
+        username=username,
+        email=email,
+        hashed_password=hash_password(password),
+    )
     db.add(user)
     db.commit()
-    return {"msg": "User created successfully"}
+    return {"msg": "Account created — please log in"}
+
 
 @app.post("/login")
 def login(
     username: str = Form(...),
     password: str = Form(...),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     user = authenticate_user(db, username, password)
     if not user:
-        raise HTTPException(status_code=401, detail="Invalid credentials")
+        raise HTTPException(status_code=401, detail="Invalid username or password")
     token = create_access_token({"sub": user.username})
     return {"access_token": token, "token_type": "bearer"}
 
 
-def _maybe_require_user(token_user = Depends(get_current_user)):
-    """
-    If REQUIRE_AUTH=True, this dependency enforces JWT on protected routes.
-    If REQUIRE_AUTH=False, we allow anonymous by returning None.
-    """
-    return token_user if REQUIRE_AUTH else None
+# ── Data routes ───────────────────────────────────────────────────────────────
 
 @app.post("/upload")
 async def upload(
     file: UploadFile = File(...),
-    _user = Depends(_maybe_require_user)
+    _user=Depends(_maybe_require_user),
 ):
-    """
-    Accept CSV / Excel / PDF and store the DataFrame on disk with a new dataset_id.
-    Returns dataset_id + detected columns.
-    """
+    """Parse a CSV, Excel, or PDF file and store the DataFrame for later queries."""
     content = await file.read()
     df, kind = read_any(content, file.filename)
+
     if df is None or df.empty:
-        raise HTTPException(status_code=400, detail="No tabular data found")
+        raise HTTPException(status_code=400, detail="No tabular data found in the uploaded file")
+
     ds_id = uuid.uuid4().hex[:12]
     save_df(ds_id, df)
-    return {"dataset_id": ds_id, "type": kind, "columns": df.columns.tolist()}
+
+    return {
+        "dataset_id": ds_id,
+        "type": kind,
+        "columns": df.columns.tolist(),
+        "rows": len(df),
+    }
+
 
 @app.post("/ask")
 async def ask(
     payload: dict,
-    _user = Depends(_maybe_require_user)
+    _user=Depends(_maybe_require_user),
 ):
     """
-    If dataset_id is missing -> general chat.
-    If dataset_id present -> NL → SQL → DuckDB → narrated answer.
+    Answer a question. If a dataset_id is supplied, query the uploaded data.
+    Otherwise, fall back to general conversational chat.
     """
-    ds = payload.get("dataset_id")
-    q = (payload.get("query") or "").strip()
-    if not q:
-        raise HTTPException(status_code=400, detail="Empty question")
+    ds_id = payload.get("dataset_id")
+    question = (payload.get("query") or "").strip()
 
-    
-    if not ds:
-        llm = ChatOpenAI(
-            api_key=os.getenv("OPENROUTER_API_KEY"),
-            base_url="https://openrouter.ai/api/v1",
-            model="mistralai/mixtral-8x7b-instruct",
-            temperature=0.7,
-        )
-        out = llm.invoke([SystemMessage(content=CHAT_SYS), HumanMessage(content=q)])
-        return JSONResponse({"answer": out.content})
+    if not question:
+        raise HTTPException(status_code=400, detail="Question cannot be empty")
 
-    
-    df = load_df(ds)
+    llm = _build_llm()
+
+    # No dataset uploaded — general chat mode
+    if not ds_id:
+        response = llm.invoke([
+            SystemMessage(content=CHAT_SYSTEM),
+            HumanMessage(content=question),
+        ])
+        return JSONResponse({"answer": response.content})
+
+    # Dataset mode — NL → SQL → DuckDB → narrated answer
+    df = load_df(ds_id)
     if df is None:
-        raise HTTPException(status_code=404, detail="dataset_id not found")
-
-    
-    sql = make_sql(q, df)
-    print("SQL:", sql)  
-
-    
-    res_df, final_sql = run_sql_with_retry(df, sql, lambda s, e: rewrite_sql_bad(s, e, df))
-
-   
-    if "smalltalk" in res_df.columns:
-        llm = ChatOpenAI(
-            api_key=os.getenv("OPENROUTER_API_KEY"),
-            base_url="https://openrouter.ai/api/v1",
-            model="mistralai/mixtral-8x7b-instruct",
-            temperature=0.7,
+        raise HTTPException(
+            status_code=404,
+            detail="Dataset not found. Please re-upload your file.",
         )
-        out = llm.invoke([SystemMessage(content=CHAT_SYS), HumanMessage(content=q)])
-        return JSONResponse({"answer": out.content})
 
-    
-    rows = res_df.to_dict(orient="records")
-    if res_df.shape == (1, 1):
-        
+    sql = make_sql(question, df)
+
+    result_df, final_sql = run_sql_with_retry(
+        df, sql, lambda s, e: rewrite_sql_bad(s, e, df)
+    )
+
+    # If the LLM flagged the question as small-talk, fall back to general chat
+    if "smalltalk" in result_df.columns:
+        response = llm.invoke([
+            SystemMessage(content=CHAT_SYSTEM),
+            HumanMessage(content=question),
+        ])
+        return JSONResponse({"answer": response.content})
+
+    rows = result_df.to_dict(orient="records")
+
+    if result_df.shape == (1, 1):
         val = list(rows[0].values())[0]
-        text = narrate(q, final_sql, {"value": val})
+        answer = narrate(question, final_sql, {"value": val})
     else:
-        text = narrate(q, final_sql, rows[:50]) 
+        answer = narrate(question, final_sql, rows[:50])
 
     return JSONResponse({
-        "answer": text,
+        "answer": answer,
         "rows": make_json_safe(rows[:200]),
-        "sql": final_sql
+        "sql": final_sql,
     })

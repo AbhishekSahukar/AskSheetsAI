@@ -4,69 +4,82 @@ let token = localStorage.getItem("token");
 const el = id => document.getElementById(id);
 
 document.addEventListener("DOMContentLoaded", () => {
-  // Redirect to login if no token (on chat page)
-  if (document.body.className !== "auth-body" && !token) {
-    window.location.href = "/static/login.html";
+  // Redirect unauthenticated users away from the chat page
+  if (document.getElementById("chat") && !token) {
+    window.location.href = "/login";
+    return;
   }
 
-  // If chat page, show welcome message once
+  // Welcome message on chat page load
   if (document.getElementById("chat")) {
-    addMessage("bot", "👋 Hi, I’m <b>AskSheets</b>. You can upload a file (Excel, CSV, PDF) or just chat with me. I’ll help you with analysis and general questions.");
+    addMessage(
+      "bot",
+      "👋 Hi, I'm <b>AskSheets</b>. Upload a CSV, Excel, or PDF and ask questions about your data — or just chat with me."
+    );
   }
 
-  // ---- LOGIN ----
-  const loginForm = document.getElementById("loginForm");
+  // ── Login ──────────────────────────────────────────────────────────────────
+  const loginForm = el("loginForm");
   if (loginForm) {
     loginForm.addEventListener("submit", async e => {
       e.preventDefault();
-      const username = el("username").value;
-      const password = el("password").value;
-
       try {
         const res = await fetch("/login", {
           method: "POST",
           body: new FormData(loginForm),
         });
-        if (!res.ok) throw new Error(await res.text());
-
-        const j = await res.json();
-        token = j.access_token;
-        localStorage.setItem("token", token);
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({ detail: "Login failed" }));
+          throw new Error(err.detail || "Login failed");
+        }
+        const { access_token } = await res.json();
+        localStorage.setItem("token", access_token);
+        token = access_token;
         window.location.href = "/static/chat.html";
       } catch (err) {
-        alert("Login failed: " + err.message);
+        showError("loginError", err.message);
       }
     });
   }
 
-  // ---- SIGNUP ----
-  const signupForm = document.getElementById("signupForm");
+  // ── Signup ─────────────────────────────────────────────────────────────────
+  const signupForm = el("signupForm");
   if (signupForm) {
     signupForm.addEventListener("submit", async e => {
       e.preventDefault();
-
       try {
         const res = await fetch("/signup", {
           method: "POST",
           body: new FormData(signupForm),
         });
-        if (!res.ok) throw new Error(await res.text());
-
-        alert("✅ Signup successful! Please log in.");
-        window.location.href = "/static/login.html";
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({ detail: "Signup failed" }));
+          throw new Error(err.detail || "Signup failed");
+        }
+        window.location.href = "/login";
       } catch (err) {
-        alert("Signup failed: " + err.message);
+        showError("signupError", err.message);
       }
     });
   }
 
-  // ---- UPLOAD ----
+  // ── File picker — show selected filename ──────────────────────────────────
+  const fileInput = el("file");
+  const fileLabel = el("fileLabel");
+  if (fileInput && fileLabel) {
+    fileInput.addEventListener("change", () => {
+      fileLabel.textContent = fileInput.files[0]?.name || "";
+    });
+  }
+
+  // ── Upload ─────────────────────────────────────────────────────────────────
   const btnUpload = el("btnUpload");
   if (btnUpload) {
     btnUpload.addEventListener("click", async () => {
-      if (!token) return alert("Please log in first!");
-      const f = el("file").files[0];
-      if (!f) return alert("Pick a file");
+      const f = fileInput?.files[0];
+      if (!f) return addMessage("bot", "⚠️ Please select a file first.");
+
+      addMessage("bot", `⏳ Uploading <b>${f.name}</b>…`);
 
       const fd = new FormData();
       fd.append("file", f);
@@ -74,64 +87,112 @@ document.addEventListener("DOMContentLoaded", () => {
       try {
         const res = await fetch("/upload", {
           method: "POST",
-          headers: { Authorization: `Bearer ${token}` },
-          body: fd
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          body: fd,
         });
-        if (!res.ok) throw new Error(await res.text());
-
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({ detail: "Upload failed" }));
+          throw new Error(err.detail);
+        }
         const j = await res.json();
         datasetId = j.dataset_id;
-        addMessage("bot", j.msg || `✅ File uploaded. Columns: ${j.columns}`);
+        addMessage(
+          "bot",
+          `✅ <b>${f.name}</b> loaded — ${j.rows.toLocaleString()} rows, ${j.columns.length} columns.<br>` +
+          `Columns: <code>${j.columns.join(", ")}</code>`
+        );
+        if (fileLabel) fileLabel.textContent = "";
       } catch (err) {
-        alert("Upload failed: " + err.message);
+        addMessage("bot", `⚠️ Upload failed: ${err.message}`);
       }
     });
   }
 
-  // ---- ASK ----
+  // ── Ask ────────────────────────────────────────────────────────────────────
   const btnAsk = el("btnAsk");
-  if (btnAsk) {
-    btnAsk.addEventListener("click", async () => {
-      const q = el("query").value.trim();
-      if (!q) return;
-      addMessage("user", q);
-      el("query").value = "";
+  const queryInput = el("query");
 
-      try {
-        const res = await fetch("/ask", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`
-          },
-          body: JSON.stringify({ query: q, dataset_id: datasetId })
-        });
-        if (!res.ok) throw new Error(await res.text());
+  async function sendQuestion() {
+    const q = queryInput?.value.trim();
+    if (!q) return;
+    addMessage("user", q);
+    queryInput.value = "";
 
-        const j = await res.json();
-        addMessage("bot", j.answer);
-      } catch (err) {
-        addMessage("bot", "⚠️ Failed to get answer: " + err.message);
+    const thinkingId = addMessage("bot", "⏳ Thinking…", true);
+
+    try {
+      const res = await fetch("/ask", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ query: q, dataset_id: datasetId }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: "Request failed" }));
+        throw new Error(err.detail);
+      }
+      const j = await res.json();
+      removeMessage(thinkingId);
+      addMessage("bot", j.answer);
+    } catch (err) {
+      removeMessage(thinkingId);
+      addMessage("bot", `⚠️ ${err.message}`);
+    }
+  }
+
+  if (btnAsk) btnAsk.addEventListener("click", sendQuestion);
+
+  // Ctrl+Enter or Cmd+Enter to send
+  if (queryInput) {
+    queryInput.addEventListener("keydown", e => {
+      if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        sendQuestion();
       }
     });
   }
 
-  // ---- LOGOUT ----
+  // ── Logout ─────────────────────────────────────────────────────────────────
   const logoutBtn = el("logoutBtn");
   if (logoutBtn) {
     logoutBtn.addEventListener("click", () => {
       localStorage.removeItem("token");
-      window.location.href = "/static/login.html";
+      token = null;
+      window.location.href = "/login";
     });
   }
 });
 
-// Helper: append chat bubbles
-function addMessage(sender, text) {
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+let _msgCounter = 0;
+
+function addMessage(sender, html, ephemeral = false) {
   const chat = el("chat");
-  const msg = document.createElement("div");
-  msg.className = `msg ${sender}`;
-  msg.innerHTML = `<div class="bubble">${text}</div>`;
-  chat.appendChild(msg);
+  const id = `msg-${++_msgCounter}`;
+  const div = document.createElement("div");
+  div.className = `msg ${sender}`;
+  div.id = id;
+  div.innerHTML = `<div class="bubble">${html}</div>`;
+  chat.appendChild(div);
   chat.scrollTop = chat.scrollHeight;
+  return id;
+}
+
+function removeMessage(id) {
+  const el = document.getElementById(id);
+  if (el) el.remove();
+}
+
+function showError(targetId, message) {
+  const target = document.getElementById(targetId);
+  if (target) {
+    target.textContent = message;
+    target.style.display = "block";
+  } else {
+    alert(message);
+  }
 }

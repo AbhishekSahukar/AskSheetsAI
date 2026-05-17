@@ -1,80 +1,69 @@
+import os
+import json
+from typing import Dict
 
-import os, json
-from typing import List, Dict, Any
 import pandas as pd
 from langchain_openai import ChatOpenAI
-from langchain.schema import SystemMessage, HumanMessage
+from langchain_core.messages import SystemMessage, HumanMessage
 
 
-def _llm(temp=0):
+def _build_llm(temperature: float = 0) -> ChatOpenAI:
     return ChatOpenAI(
         api_key=os.getenv("OPENROUTER_API_KEY"),
         base_url="https://openrouter.ai/api/v1",
-        model="mistralai/mixtral-8x7b-instruct",
-        temperature=temp,
+        model="minimax/minimax-m2.5",
+        temperature=temperature,
     )
 
+
 def _schema_hint(df: pd.DataFrame) -> Dict[str, str]:
-    """
-    Map pandas dtypes to coarse SQL-ish types for DuckDB guidance.
-    """
+    """Map pandas dtypes to coarse SQL types for DuckDB guidance."""
     mapping = {}
-    for c, t in df.dtypes.items():
-        st = str(t).lower()
-        if "datetime" in st or "date" in st:
-            mapping[c] = "TIMESTAMP"
-        elif "int" in st or "float" in st or "double" in st or "decimal" in st:
-            mapping[c] = "NUMERIC"
+    for col, dtype in df.dtypes.items():
+        t = str(dtype).lower()
+        if "datetime" in t or "date" in t:
+            mapping[col] = "TIMESTAMP"
+        elif any(x in t for x in ("int", "float", "double", "decimal")):
+            mapping[col] = "NUMERIC"
         else:
-            mapping[c] = "TEXT"
+            mapping[col] = "TEXT"
     return mapping
 
 
-SYSTEM = """You generate exactly ONE DuckDB SQL SELECT query for a table named data based on the user's question.
+SYSTEM_PROMPT = """You generate exactly ONE DuckDB SQL SELECT query for a table named `data` based on the user's question.
 
-You MUST use ONLY columns that appear in the provided SCHEMA. You may look at the SAMPLE ROWS to infer meaning (e.g., which column looks like a date, amount, product, department, etc.). Your query must be valid DuckDB SQL.
+Use ONLY columns from the provided SCHEMA. Check SAMPLE ROWS to infer each column's meaning.
 
-General rules:
-- Output ONLY the raw SQL (no prose, no backticks).
-- Query the table named data.
-- Use ONLY SELECT statements (no CREATE/INSERT/UPDATE/DELETE).
-- Prefer robust text filters using ILIKE '%term%' for case-insensitive containment on TEXT.
-- Cast text to appropriate types when needed (e.g., CAST(col AS DATE) / CAST(col AS DOUBLE)).
-- For time phrases ("this month", "last month", "last 30 days", "YTD"), use CURRENT_DATE with DATE_TRUNC/INTERVAL.
-  Examples:
-    DATE_TRUNC('month', CAST(date_col AS DATE)) = DATE_TRUNC('month', CURRENT_DATE)   -- this month
-    DATE_TRUNC('month', CAST(date_col AS DATE)) = DATE_TRUNC('month', CURRENT_DATE - INTERVAL 1 MONTH)   -- last month
-    CAST(date_col AS DATE) >= CURRENT_DATE - INTERVAL 30 DAY                              -- last 30 days
-    CAST(date_col AS DATE) >= DATE_TRUNC('year', CURRENT_DATE)                            -- YTD
-- Always include a LIMIT if the result could be large (e.g., detail lists or groupings), typically LIMIT 200.
+Rules:
+- Output raw SQL only — no prose, no backticks, no explanation.
+- Only SELECT statements (no CREATE/INSERT/UPDATE/DELETE).
+- Use ILIKE '%term%' for case-insensitive text matching.
+- Cast text columns when needed: CAST(col AS DATE), CAST(col AS DOUBLE).
+- For time phrases, use CURRENT_DATE with DATE_TRUNC / INTERVAL:
+    this month  → DATE_TRUNC('month', CAST(col AS DATE)) = DATE_TRUNC('month', CURRENT_DATE)
+    last month  → DATE_TRUNC('month', CAST(col AS DATE)) = DATE_TRUNC('month', CURRENT_DATE - INTERVAL 1 MONTH)
+    last 30 days → CAST(col AS DATE) >= CURRENT_DATE - INTERVAL 30 DAY
+    YTD         → CAST(col AS DATE) >= DATE_TRUNC('year', CURRENT_DATE)
+- Add LIMIT 200 on detail queries, LIMIT 50 on grouped results.
 
-Dynamic measure selection (NO hardcoding):
-- If the user asks to "summarize" or "total" and there is at least one NUMERIC column, pick the most "measure-like" one.
-- A "measure-like" column is NUMERIC and its name suggests metrics, e.g., contains one of:
-  revenue, amount, sales, total, price, cost, qty, quantity, score, points, salary, expense, balance.
-- If multiple such columns exist, choose the most global/aggregate-sounding one (e.g., revenue/amount/total before quantity/score).
-- If none of the names match, fall back to the first NUMERIC column in schema order.
-- If NO NUMERIC columns exist, do not fabricate numeric aggregations; instead return a row count (COUNT(*)) or a sensible grouping.
+Choosing the right measure column:
+- For "total" / "summarize": prefer a NUMERIC column whose name suggests a metric
+  (revenue, amount, sales, total, price, cost, qty, quantity, score, salary, expense, balance).
+- If multiple match, pick the most aggregate-sounding one.
+- If none match, fall back to the first NUMERIC column.
+- If no NUMERIC columns exist, return COUNT(*).
 
-Time column selection (NO hardcoding):
-- If a date-like column exists (TIMESTAMP type or a TEXT column whose SAMPLE ROWS look like dates), use it for time windows.
-- If none exist and the user asks for a time window, ignore the window and still answer without time filtering.
-
-Grouping:
-- If the user asks "by X", group by a TEXT column that best matches X by name and/or sample values.
-- When ranking (e.g., "top", "highest", "most"), order by an aggregate (SUM/COUNT/AVG) and LIMIT appropriately.
-
-Small talk:
-- Only if the message is clearly unrelated to the data (greetings, general chit-chat) return:
+Small-talk detection:
+- If the question is clearly unrelated to the data (greeting, chit-chat), return:
   SELECT 'CHAT' AS smalltalk;
 
-Examples (do not assume these exact columns exist, they are illustrative):
+Examples (columns are illustrative — use the actual schema):
 
 Q: summarize the sales
-SQL: SELECT COALESCE(SUM(revenue),0) AS total FROM data;
+SQL: SELECT COALESCE(SUM(revenue), 0) AS total FROM data;
 
 Q: how many headphones were sold?
-SQL: SELECT COALESCE(SUM(quantity),0) AS total_units
+SQL: SELECT COALESCE(SUM(quantity), 0) AS total_units
      FROM data
      WHERE CAST(product AS TEXT) ILIKE '%headphones%';
 
@@ -86,47 +75,41 @@ SQL: SELECT region, SUM(revenue) AS total_revenue
      ORDER BY total_revenue DESC
      LIMIT 50;
 
-Q: list customers in the west with outstanding balance > 1000
-SQL: SELECT customer, balance
-     FROM data
-     WHERE CAST(region AS TEXT) ILIKE '%west%'
-       AND CAST(balance AS DOUBLE) > 1000
-     LIMIT 200;
-
 Q: hi
 SQL: SELECT 'CHAT' AS smalltalk;
 """
 
-def _build_prompt(question: str, df: pd.DataFrame) -> str:
+
+def _build_user_prompt(question: str, df: pd.DataFrame) -> str:
     schema = _schema_hint(df)
-    
     samples = df.head(3).to_dict(orient="records")
     return (
-        "SCHEMA: " + json.dumps(schema, ensure_ascii=False) + "\n"
-        "SAMPLES: " + json.dumps(samples, ensure_ascii=False) + "\n"
-        "QUESTION: " + question + "\n"
+        f"SCHEMA: {json.dumps(schema, ensure_ascii=False)}\n"
+        f"SAMPLES: {json.dumps(samples, ensure_ascii=False)}\n"
+        f"QUESTION: {question}\n"
         "Return ONLY the SQL:"
     )
 
+
 def make_sql(question: str, df: pd.DataFrame) -> str:
-    out = _llm(temp=0).invoke([
-        SystemMessage(content=SYSTEM),
-        HumanMessage(content=_build_prompt(question, df))
+    llm = _build_llm(temperature=0)
+    response = llm.invoke([
+        SystemMessage(content=SYSTEM_PROMPT),
+        HumanMessage(content=_build_user_prompt(question, df)),
     ])
-    return (out.content or "").strip()
+    return (response.content or "").strip()
 
 
 def rewrite_sql_bad(original_sql: str, error_msg: str, df: pd.DataFrame) -> str:
+    """Ask the LLM to fix a SQL query that failed with an error."""
     schema = _schema_hint(df)
-    prompt = f"""The following DuckDB SQL errored. Fix it and return ONLY corrected SQL.
-
-SCHEMA: {json.dumps(schema, ensure_ascii=False)}
-COLUMNS: {list(df.columns)}
-ORIGINAL SQL:
-{original_sql}
-
-ERROR:
-{error_msg}
-"""
-    out = _llm(temp=0).invoke([HumanMessage(content=prompt)])
-    return (out.content or "").strip()
+    prompt = (
+        f"The following DuckDB SQL query returned an error. Fix it and return ONLY the corrected SQL.\n\n"
+        f"SCHEMA: {json.dumps(schema, ensure_ascii=False)}\n"
+        f"COLUMNS: {list(df.columns)}\n\n"
+        f"ORIGINAL SQL:\n{original_sql}\n\n"
+        f"ERROR:\n{error_msg}"
+    )
+    llm = _build_llm(temperature=0)
+    response = llm.invoke([HumanMessage(content=prompt)])
+    return (response.content or "").strip()

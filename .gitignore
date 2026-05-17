@@ -1,26 +1,36 @@
-Python
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-*.db
-*.sqlite3
-
-Virtual environment
-.venv/
-env/
-venv/
-
-Environment variables (keep secrets out of Git!)
+# Environment
 .env
 .env.*
+!.env.example
 
-Logs
-*.log
-logs/
-*.out
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
 
+# App data (local cache and SQLite DB)
+app/cache/
 *.db
-*.sqlite3
-users.db
+*.pkl
 
+# Build artifacts
+dist/
+build/
+*.egg-info/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+repo_part1.txt
+repo_part2.txt
+repo_part3.txt
+repo_part4.txt
+repo_tree.txt

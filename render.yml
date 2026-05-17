@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: asksheets
+    runtime: docker
+    plan: free
+    envVars:
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: ASKSHEETS_SECRET_KEY
+        generateValue: true
+      - key: REQUIRE_AUTH
+        value: "false"

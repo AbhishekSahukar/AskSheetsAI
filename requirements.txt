@@ -9,6 +9,7 @@ openai>=1.35.0
 python-dotenv
 pdfplumber
 duckdb
-passlib[bcrypt]
+bcrypt
 python-jose[cryptography]
 sqlalchemy
+langchain-core>=0.2.0

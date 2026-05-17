@@ -2,7 +2,8 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>AskSheets Chat</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AskSheets</title>
   <link rel="stylesheet" href="/static/styles.css" />
   <script src="/static/app.js" defer></script>
 </head>
@@ -12,11 +13,21 @@
       <h1>💬 AskSheets</h1>
       <button id="logoutBtn" class="logout-btn">Logout</button>
     </div>
+
     <div id="chat" class="chat"></div>
+
     <div class="composer">
-      <input type="file" id="file" />
-      <textarea id="query" placeholder="Type your message..."></textarea>
-      <button id="btnUpload">Upload</button>
+      <label class="file-picker">
+        <input type="file" id="file" accept=".csv,.xlsx,.xls,.pdf" />
+        <span class="file-btn">📎 Attach</span>
+        <span id="fileLabel" class="file-label"></span>
+      </label>
+      <button id="btnUpload" class="upload-btn">Upload</button>
+      <textarea
+        id="query"
+        placeholder="Ask a question… (Ctrl+Enter to send)"
+        rows="2"
+      ></textarea>
       <button id="btnAsk">Ask</button>
     </div>
   </div>

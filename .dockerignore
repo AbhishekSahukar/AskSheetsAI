@@ -1,0 +1,41 @@
+# Environment — never bake secrets into the image
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+
+# App data — cache and DB are runtime-generated, not part of the image
+app/cache/
+*.db
+*.pkl
+
+# Git
+.git/
+.gitignore
+
+# Dev tools
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docs and repo dumps (not needed in the container)
+README.md
+*.txt
+!requirements.txt
+
+repo_part1.txt
+repo_part2.txt
+repo_part3.txt
+repo_part4.txt
+repo_tree.txt
